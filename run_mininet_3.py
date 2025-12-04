@@ -6,7 +6,8 @@ from mininet.node import OVSKernelSwitch
 from mininet.link import TCLink
 from mininet.log import setLogLevel, info
 
-
+from threading import Lock
+cmd_lock = Lock()
 # ---------- Utils ----------
 def apply_netem(node, iface, rate_mbps, delay_ms, limit_pkts):
     node.cmd(f"tc qdisc del dev {iface} root 2>/dev/null")
@@ -22,7 +23,8 @@ def monitor_qdisc(node, iface, out_csv, duration, interval=0.2):
         w = csv.writer(f); w.writerow(["t","backlog_bytes","backlog_pkts","dropped_total"])
         t0 = time.time()
         while time.time() - t0 < duration:
-            s = node.cmd(f"tc -s qdisc show dev {iface}")
+            with cmd_lock: 
+                s = node.cmd(f"tc -s qdisc show dev {iface}")
             m_back = re.search(r"backlog\s+(\d+)b\s+(\d+)p", s)
             m_drop = re.search(r"\(dropped\s+(\d+),", s)
             bb = int(m_back.group(1)) if m_back else 0
@@ -87,8 +89,8 @@ def run():
     ap.add_argument("--results", default="results")
     args = ap.parse_args()
 
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    resdir = os.path.join(args.results, f"run_{stamp}")
+    
+    resdir = args.results
     os.makedirs(resdir, exist_ok=True)
     info(f"*** Results dir: {resdir}\n")
 
