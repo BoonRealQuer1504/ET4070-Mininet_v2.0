@@ -4,12 +4,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dst", default="10.0.0.2")
     ap.add_argument("--port", type=int, default=5555)
-    ap.add_argument("--lam", type=float, default=300, help="Poisson rate λ (packets/s)")
+    ap.add_argument("--lam", type=float, default=300.0, help="Poisson rate λ (packets/s)")
     ap.add_argument("--duration", type=float, default=20.0, help="seconds")
     ap.add_argument("--size", type=int, default=256, help="UDP payload bytes (>=12)")
     ap.add_argument("--out", default="/tmp/send_log.csv")
     args = ap.parse_args()
-    
+
     assert args.size >= 12, "payload size must be >= 12 bytes (timestamp+seq)"
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -27,7 +27,7 @@ def main():
 
     try:
         while True:
-            next_t += 1/args.lam
+            next_t += random.expovariate(args.lam)
             now = time.time()
             if next_t > end_t: break
             dt = next_t - now
