@@ -126,11 +126,11 @@ def run():
     net.addLink(h2, s1)          
     net.addLink(h3, s2)          
     net.addLink(s1, s3)          
-    net.addLink(s2, s4)          
-    net.addLink(s2, s3)         
+    net.addLink(s2, s3)          
+    net.addLink(s2, s4)         
     net.addLink(s3, s5)          
-    net.addLink(s4, s6)          
     net.addLink(s3, s6)          
+    net.addLink(s4, s6)          
     net.addLink(s5, h4) 
     net.addLink(s6, h5) 
 
@@ -156,13 +156,13 @@ def run():
         # từ s1
         ("s1", "s1-eth3", args.r_s1_s3, args.d_s1_s3, args.q_s1_s3),  # s1 → s3
         # từ s2
-        ("s2", "s2-eth3", args.r_s2_s3, args.d_s2_s3, args.q_s2_s3),  # s2 → s4
-        ("s2", "s2-eth4", args.r_s2_s4, args.d_s2_s4, args.q_s2_s4),  # s2 → s3
+        ("s2", "s2-eth2", args.r_s2_s3, args.d_s2_s3, args.q_s2_s3),  # s2 → s4
+        ("s2", "s2-eth3", args.r_s2_s4, args.d_s2_s4, args.q_s2_s4),  # s2 → s3
         # từ s3
-        ("s3", "s3-eth4", args.r_s3_s5, args.d_s3_s5, args.q_s3_s5),  # s3 → s5 → h4
-        ("s3", "s3-eth5", args.r_s3_s6, args.d_s3_s6, args.q_s3_s6),  # s3 → s6 → h5
+        ("s3", "s3-eth3", args.r_s3_s5, args.d_s3_s5, args.q_s3_s5),  # s3 → s5 → h4
+        ("s3", "s3-eth4", args.r_s3_s6, args.d_s3_s6, args.q_s3_s6),  # s3 → s6 → h5
         # từ s4
-        ("s4", "s4-eth3", args.r_s4_s6, args.d_s4_s6, args.q_s4_s6),  # s4 → s6
+        ("s4", "s4-eth2", args.r_s4_s6, args.d_s4_s6, args.q_s4_s6),  # s4 → s6
         # ra host
         ("s5", "s5-eth2", args.r_s5_h4, args.d_s5_h4, args.q_s5_h4),  # s5 → h4
         ("s6", "s6-eth2", args.r_s6_h5, args.d_s6_h5, args.q_s6_h5),  # s6 → h5
