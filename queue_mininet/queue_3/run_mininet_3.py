@@ -30,18 +30,25 @@ def monitor_qdisc(node, iface, out_csv, duration, interval=0.2):
             bb = int(m_back.group(1)) if m_back else 0
             bp = int(m_back.group(2)) if m_back else 0
             dr = int(m_drop.group(1)) if m_drop else 0
-            w.writerow([f"{time.time()-t0:.6f}", bb, bp, dr]); f.flush()
+            w.writerow([f"{time.time()-t0:.6f}", bb, bp, dr]); 
+            f.flush()
             time.sleep(interval)
 
 def add_flow(sw, rule):
     return sw.cmd(f'ovs-ofctl -O OpenFlow13 add-flow {sw.name} "{rule}"')
 
 def add_group_select(sw, gid, buckets, selection="dp_hash"):
-    # try weighted buckets
-    btxt = ",".join([f"bucket=weight:{w},actions=output:{p}" for w,p in buckets])
+    rep = []
+    for w,p in buckets:
+        k = max(1, int(round(w * 10)))
+        rep += [f"bucket=actions=output:{p}"] * k
+
+    btxt = ",".join(rep)
     cmd = (f'ovs-ofctl -O OpenFlow13 add-group {sw.name} '
-           f'"group_id={gid},type=select,selection_method={selection},{btxt}"')
+           f'"group_id={gid},type=select,{btxt}"')
+
     out = sw.cmd(cmd)
+    print("ADD-GROUP:", out)
     if "syntax error" in out or "unknown" in out:
         rep = []
         for w,p in buckets:
@@ -129,6 +136,8 @@ def run():
 
     net.start()
     info("*** Network started\n")
+    
+    
 
     h4_mac = h4.MAC(); h5_mac = h5.MAC()
     h1.cmd(f"ip neigh replace 10.0.0.21 lladdr {h4_mac} dev h1-eth0 nud permanent")
@@ -151,11 +160,14 @@ def run():
     # ---------- OpenFlow rules ----------
     # table-miss drop
     for sw in (s1,s2,s3,s4):
+        add_flow(sw, "priority=50,arp,actions=flood")
         add_flow(sw, "priority=0,actions=drop")
+        
 
     # s1: group select (gid=10): s1-eth2 (->s3) với p, s1-eth3 (->s4) với 1-p
-    p13, p14 = args.p_s1_s3, args.p_s1_s4
+    p13, p14 = (args.p_s1_s3)*10, (args.p_s1_s4)*10
     add_group_select(s1, 10, [(p13,2),(p14,3)])
+    
 
     # s1: h1 in_port=1, dst==h4 -> group 10; dst==h5 -> output:2 (qua s3)
     add_flow(s1, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.21,actions=group:10")
@@ -171,6 +183,8 @@ def run():
 
     # s4: mọi gói tới h4 -> ra h4 (eth3)
     add_flow(s4, "priority=100,ip,udp,nw_dst=10.0.0.21,actions=output:3")
+    from mininet.cli import CLI
+    CLI(net)
 
     # ---------- Sniffer tại h4, h5 ----------
     pcap_h4 = os.path.join(resdir, "sniff_h4.pcap")
@@ -230,6 +244,8 @@ def run():
     for _,_,name in mons:
         print("Queue:", os.path.join(resdir,name))
     print("PCAP:", pcap_h4, pcap_h5)
+
+
 
 if __name__ == "__main__":
     run()
