@@ -37,11 +37,17 @@ def add_flow(sw, rule):
     return sw.cmd(f'ovs-ofctl -O OpenFlow13 add-flow {sw.name} "{rule}"')
 
 def add_group_select(sw, gid, buckets, selection="dp_hash"):
-    # try weighted buckets
-    btxt = ",".join([f"bucket=weight:{w},actions=output:{p}" for w,p in buckets])
+    rep = []
+    for w,p in buckets:
+        k = max(1, int(round(w * 10)))
+        rep += [f"bucket=actions=output:{p}"] * k
+
+    btxt = ",".join(rep)
     cmd = (f'ovs-ofctl -O OpenFlow13 add-group {sw.name} '
-           f'"group_id={gid},type=select,selection_method={selection},{btxt}"')
+           f'"group_id={gid},type=select,{btxt}"')
+
     out = sw.cmd(cmd)
+    print("ADD-GROUP:", out)
     if "syntax error" in out or "unknown" in out:
         rep = []
         for w,p in buckets:
@@ -165,7 +171,7 @@ def run():
         ("s4", "s4-eth2", args.r_s4_s6, args.d_s4_s6, args.q_s4_s6),  # s4 → s6
         # ra host
         ("s5", "s5-eth2", args.r_s5_h4, args.d_s5_h4, args.q_s5_h4),  # s5 → h4
-        ("s6", "s6-eth2", args.r_s6_h5, args.d_s6_h5, args.q_s6_h5),  # s6 → h5
+        ("s6", "s6-eth3", args.r_s6_h5, args.d_s6_h5, args.q_s6_h5),  # s6 → h5
     ]
 
     for sw_name, iface, r, d, q in queue_configs:
@@ -182,81 +188,93 @@ def run():
 
     # Default drop
     for sw in [s1, s2, s3, s4, s5, s6]:
+        add_flow(sw, "priority=50,arp,actions=flood")
         add_flow(sw, "priority=0,actions=drop")
-
+    # --- s1: chỉ chuyển tiếp từ h1,h2 → s3 (không chia đường) ---
+    add_flow(s1, "priority=100,ip,udp,in_port=1,actions=output:3")   # h1 → s3
+    add_flow(s1, "priority=100,ip,udp,in_port=2,actions=output:3") 
     # --- s2: chia đường từ h3 (0.3 → s3, 0.7 → s4) ---
-    add_group_select(s2, 10, [(args.p_s2_s3, 4), (args.p_s2_s4, 3)])  # port 4=s3, port 3=s4
-    add_flow(s2, "priority=100,ip,udp,in_port=1,actions=group:10")   # từ h3
-
+    add_group_select(s2, 10, [(args.p_s2_s3, 2), (args.p_s2_s4, 3)])  # port 4=s3, port 3=s4
+    add_flow(s2, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.22,actions=group:10")   # từ h3
+    add_flow(s2, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.21,actions=output:2")
     # --- s3: chia đường (0.6 → s5 → h4, 0.4 → s6 → h5) ---
-    add_group_select(s3, 20, [(args.p_s3_s5, 4), (args.p_s3_s6, 5)])  # port 4=s5, port 5=s6
+    add_group_select(s3, 20, [(args.p_s3_s5, 3), (args.p_s3_s6, 4)])  # port 4=s5, port 5=s6
     add_flow(s3, "priority=100,ip,udp,in_port=1,actions=group:20")   # từ s1
     add_flow(s3, "priority=100,ip,udp,in_port=2,actions=group:20")   # từ s2 (nếu có)
 
-    # --- s1: chỉ chuyển tiếp từ h1,h2 → s3 (không chia đường) ---
-    add_flow(s1, "priority=100,ip,udp,in_port=1,actions=output:3")   # h1 → s3
-    add_flow(s1, "priority=100,ip,udp,in_port=2,actions=output:3")   # h2 → s3
+
 
     # --- s4: chỉ chuyển tiếp → s6 ---
-    add_flow(s4, "priority=100,ip,udp,actions=output:3")             # → s6
+    add_flow(s4, "priority=100,ip,udp,actions=output:2")             # → s6
 
     # --- s5 & s6: ra host ---
     add_flow(s5, "priority=100,ip,udp,actions=output:2")             # → h4
-    add_flow(s6, "priority=100,ip,udp,actions=output:2")             # → h5
+    add_flow(s6, "priority=100,ip,udp,actions=output:3")             # → h5
+    from mininet.cli import CLI
+    CLI(net)
+
+    # ---------- Sniffer tại h4, h5 ----------
+    pcap_h4 = os.path.join(resdir, "sniff_h4.pcap")
+    pcap_h5 = os.path.join(resdir, "sniff_h5.pcap")
+    h4.cmd(f"tcpdump -i h4-eth0 -w {pcap_h4} udp &")
+    h5.cmd(f"tcpdump -i h5-eth0 -w {pcap_h5} udp &")
 
     # ====================== RECEIVERS ======================
-    recvA = os.path.join(resdir, "recv_h4.csv")
-    recvB = os.path.join(resdir, "recv_h5.csv")
-    port_h4, port_h5 = 5551, 5552
-
-    h4.cmd(f"python3 {recv_py} --port {port_h4} --duration {args.duration+5} --out {recvA} &")
-    h5.cmd(f"python3 {recv_py} --port {port_h5} --duration {args.duration+5} --out {recvB} &")
+    recvA = os.path.join(resdir, "recv_A_h4.csv")
+    recvB = os.path.join(resdir, "recv_B_h5.csv")
+    recvC = os.path.join(resdir, "recv_C_h4.csv")
+    # port riêng cho mỗi flow
+    portA, portB, portC = 5551, 5552, 5553
+    h4.cmd(f"python3 {recv_py} --port {portA} --duration {args.duration+2} --out {recvA} &")
+    h5.cmd(f"python3 {recv_py} --port {portB} --duration {args.duration+2} --out {recvB} &")
+    h4.cmd(f"python3 {recv_py} --port {portC} --duration {args.duration+2} --out {recvC} &")
 
     # ====================== SENDERS (Poisson) ======================
-    send_h1 = os.path.join(resdir, "send_h1.csv")
-    send_h2 = os.path.join(resdir, "send_h2.csv")
-    send_h3 = os.path.join(resdir, "send_h3.csv")
+    sendA = os.path.join(resdir, "send_A_h1_to_h4.csv")
+    sendB = os.path.join(resdir, "send_B_h2_to_h5.csv")
+    sendC = os.path.join(resdir, "send_C_h3_to_h4.csv")
 
-    lam = [float(x) for x in args.lam.split(",")]  # 3 giá trị: h1, h2, h3
+    lam = [float(x) for x in args.lam.split(",")] if args.lam else [300,300,300]
+    pps = [float(x) for x in args.pps.split(",")] if args.pps else [0,0,0]
 
-    h1.cmd(f"python3 {snd_py} --dst 10.0.0.21 --port {port_h4} --lam {lam[0]} --size {args.size} --duration {args.duration} --out {send_h1} &")
-    h2.cmd(f"python3 {snd_py} --dst 10.0.0.21 --port {port_h4} --lam {lam[1]} --size {args.size} --duration {args.duration} --out {send_h2} &")
-    h3.cmd(f"python3 {snd_py} --dst 10.0.0.22 --port {port_h5} --lam {lam[2]} --size {args.size} --duration {args.duration} --out {send_h3} &")
+    def snd_cmd(dst_ip, port, out_csv, lam_or_pps):
+        return f"python3 {snd_py} --dst {dst_ip} --port {port} --lam {lam_or_pps} --size {args.size} --duration {args.duration} --out {out_csv} &"
+
+    h1.cmd(snd_cmd("10.0.0.21", portA, sendA, lam[0] if args.mode=="poisson" else pps[0]))
+    h2.cmd(snd_cmd("10.0.0.22", portB, sendB, lam[1] if args.mode=="poisson" else pps[1]))
+    h3.cmd(snd_cmd("10.0.0.21", portC, sendC, lam[2] if args.mode=="poisson" else pps[2]))
 
     # ====================== MONITOR QUEUE ======================
     mons = [
         ("s1","s1-eth3","queue_s1_s3.csv"),
+        ("s2","s2-eth2","queue_s2_s3.csv"),
         ("s2","s2-eth3","queue_s2_s4.csv"),
-        ("s2","s2-eth4","queue_s2_s3.csv"),
-        ("s3","s3-eth4","queue_s3_s5.csv"),
-        ("s3","s3-eth5","queue_s3_s6.csv"),
-        ("s4","s4-eth3","queue_s4_s6.csv"),
+        ("s3","s3-eth3","queue_s3_s5.csv"),
+        ("s3","s3-eth4","queue_s3_s6.csv"),
+        ("s4","s4-eth2","queue_s4_s6.csv"),
         ("s5","s5-eth2","queue_s5_h4.csv"),
-        ("s6","s6-eth2","queue_s6_h5.csv"),
+        ("s6","s6-eth3","queue_s6_h5.csv"),
     ]
-    threads = []
-    for sw_name, iface, fname in mons:
-        sw = locals()[sw_name]
-        csv_path = os.path.join(resdir, fname)
-        t = threading.Thread(target=monitor_qdisc, args=(sw, iface, csv_path, args.duration+10))
-        t.daemon = True
-        t.start()
-        threads.append(t)
+    threads=[]
+    for sw,iface,name in mons:
+        node = locals()[sw]
+        t = threading.Thread(target=monitor_qdisc, args=(node,iface,os.path.join(resdir,name), args.duration+2), kwargs=dict(interval=0.2), daemon=True)
+        t.start(); threads.append(t)
 
-    # ====================== CHẠY & KẾT THÚC ======================
-    info(f"*** Running experiment for {args.duration}s...\n")
-    time.sleep(args.duration + 10)
-
+    # ---------- Stop ----------
+    time.sleep(args.duration + 3)
+    h4.cmd("pkill -f tcpdump"); h5.cmd("pkill -f tcpdump")
     net.stop()
-    info("*** Done!\n")
-    print("\n" + "="*50)
-    print("KẾT QUẢ ĐÃ LƯU TẠI:", resdir)
-    print(f" • Gửi từ h1,h2 → h4: {send_h1}, {send_h2}")
-    print(f" • Gửi từ h3 → h5: {send_h3}")
-    print(f" • Nhận h4: {recvA}")
-    print(f" • Nhận h5: {recvB}")
-    print(" • Queue logs: queue_*.csv")
-    print("="*50)
+
+    print("\n=== DONE ===")
+    print(f"[Flow A] Send: {sendA}  |  Recv: {recvA}")
+    print(f"[Flow B] Send: {sendB}  |  Recv: {recvB}")
+    print(f"[Flow C] Send: {sendC}  |  Recv: {recvC}")
+    for _,_,name in mons:
+        print("Queue:", os.path.join(resdir,name))
+    print("PCAP:", pcap_h4, pcap_h5)
+
+
 
 if __name__ == "__main__":
     run()
