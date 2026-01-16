@@ -439,7 +439,7 @@ def main():
         t += 0.1
 
 
-    folder_name = "routing/routing_dijkstra_pcaps"
+    folder_name = "routing/routing_dijkstra"
 
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
