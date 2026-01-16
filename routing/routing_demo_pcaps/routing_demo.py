@@ -1,6 +1,7 @@
 from scapy.all import Ether, IP, UDP, TCP, Raw, wrpcap
 import struct
 import socket
+import os
 
 
 def build_rip_response(routes):
@@ -370,7 +371,16 @@ def main():
 
     all_pkts = rip_pkts + ospf_pkts + bgp_pkts
 
-    wrpcap("routing_demo.pcap", all_pkts)
+
+    folder_name = "routing/routing_demo_pcaps"
+
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+
+    file_path = os.path.join(folder_name, "routing_demo.pcap")
+    
+    wrpcap(file_path, all_pkts)
+    print(f"--- Đã lưu file thành công tại: {file_path} ---")
     print("Đã tạo file routing_demo.pcap – hãy mở bằng Wireshark và lọc:")
     print("  - rip")
     print("  - ospf")
