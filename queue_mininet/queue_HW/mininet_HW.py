@@ -60,10 +60,10 @@ def add_group_select(sw, gid, buckets, selection="dp_hash"):
     return out
 
 def choose_sender_script(script_dir):
-    cand = os.path.join(script_dir, "poisson_sender.py")
+    cand = os.path.join(script_dir, "poisson_sender2.py")
     if os.path.isfile(cand):
         return cand, "poisson"
-    raise FileNotFoundError("Not found poisson_sender.py.")
+    raise FileNotFoundError("Not found poisson_sender2.py.")
 
 # ---------- Main ----------
 def run():
@@ -194,11 +194,11 @@ def run():
     add_flow(s1, "priority=100,ip,udp,in_port=1,actions=output:3")   # h1 → s3
     add_flow(s1, "priority=100,ip,udp,in_port=2,actions=output:3") 
     # --- s2: chia đường từ h3 (0.3 → s3, 0.7 → s4) ---
-    add_group_select(s2, 10, [(args.p_s2_s3, 2), (args.p_s2_s4, 3)])  # port 4=s3, port 3=s4
+    add_group_select(s2, 10, [(args.p_s2_s3, 2), (args.p_s2_s4, 3)],selection="random")  # port 4=s3, port 3=s4
     add_flow(s2, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.22,actions=group:10")   # từ h3
-    add_flow(s2, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.21,actions=output:2")
+    add_flow(s2, "priority=100,ip,udp,in_port=1,nw_dst=10.0.0.21,actions=group:10")
     # --- s3: chia đường (0.6 → s5 → h4, 0.4 → s6 → h5) ---
-    add_group_select(s3, 20, [(args.p_s3_s5, 3), (args.p_s3_s6, 4)])  # port 4=s5, port 5=s6
+    add_group_select(s3, 20, [(args.p_s3_s5, 3), (args.p_s3_s6, 4)],selection="random")  # port 4=s5, port 5=s6
     add_flow(s3, "priority=100,ip,udp,in_port=1,actions=group:20")   # từ s1
     add_flow(s3, "priority=100,ip,udp,in_port=2,actions=group:20")   # từ s2 (nếu có)
 
